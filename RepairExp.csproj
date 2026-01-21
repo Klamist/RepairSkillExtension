@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyTitle></AssemblyTitle>
+    <AssemblyName>RepairSkillExtension</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="SemanticVersioning">
+      <HintPath>D:\EFT408\SPT\SemanticVersioning.dll</HintPath>
+    </Reference>
+    <Reference Include="SPTarkov.Common">
+      <HintPath>D:\EFT408\SPT\SPTarkov.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="SPTarkov.DI">
+      <HintPath>D:\EFT408\SPT\SPTarkov.DI.dll</HintPath>
+    </Reference>
+    <Reference Include="SPTarkov.Server.Core">
+      <HintPath>D:\EFT408\SPT\SPTarkov.Server.Core.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>
