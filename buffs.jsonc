@@ -1,0 +1,104 @@
+// ONLY edit values of parameters
+
+{
+// =====Buff Chance=====
+// Buff Chance = MinChance + lvl_of_skill * LvBonus * point_cost_of_kit / (ReceivedDuraMax% * maxdura_of_item)
+// If lightvest \ heavyvest \ weapon skill < Lv.10, related Buff Chance = 0
+  "BuffSettings": {
+    "CommonBuffMinChanceValue": 0.25,
+    "CommonBuffChanceLevelBonus": 0.015,
+    "ReceivedDurabilityMaxPercent": 1
+    // Default in globals.json = 0.15, 0.005, 30
+  },
+
+// =====Buff Effect and Durability=====
+  "repairKit": {
+    "armors": { // For Armor, Vest, Helmet, Facecover, Visor
+      "rarityWeight": { // Default in repair.json = 5, 1
+        "Common": 7,
+        "Rare": 3
+      },
+      "bonusTypeWeight": {
+        "DamageReduction": 1
+      },
+      "Common": {
+        "DamageReduction": {
+          "valuesMinMax": { // Default in repair.json = 0.9, 0.98
+            "min": 0.85,
+            "max": 0.9  // Multipie the final damage when get hit on this position
+          },
+          "activeDurabilityPercentMinMax": { // Default in repair.json = 75, 90
+            "min": 15,
+            "max": 20  // Remove buff when dura is lower than this% * current_MaxDura
+          }
+        }
+      },
+      "Rare": {
+        "DamageReduction": {
+          "valuesMinMax": { // Default in repair.json = 0.8, 0.9
+            "min": 0.65,
+            "max": 0.7
+          },
+          "activeDurabilityPercentMinMax": { // Default in repair.json = 75, 90
+            "min": 5,
+            "max": 10
+          }
+        }
+      }
+    },
+    "weapon": {
+      "rarityWeight": { // Default in repair.json = 5, 1
+        "Common": 7,
+        "Rare": 3
+      },
+      "bonusTypeWeight": { // Default in repair.json = 1, 1
+        "WeaponSpread": 1,
+        "MalfunctionProtections": 1
+      },
+      "Common": {
+        "WeaponSpread": {
+          "valuesMinMax": { // Default in repair.json = 0.9, 0.99
+            "min": 0.85,
+            "max": 0.9  // Multipie weapon spread by this
+          },
+          "activeDurabilityPercentMinMax": { // Default in repair.json = 75, 90
+            "min": 15,
+            "max": 20  // Remove buff when dura is lower than this% * current_MaxDura
+          }
+        },
+        "MalfunctionProtections": { // Default in repair.json = 0.94, 0.96
+          "valuesMinMax": {
+            "min": 0.85,
+            "max": 0.9  // Multipie malf chance by this
+          },
+          "activeDurabilityPercentMinMax": { // Default in repair.json = 75, 90
+            "min": 15,
+            "max": 20
+          }
+        }
+      },
+      "Rare": {
+        "WeaponSpread": {
+          "valuesMinMax": { // Default in repair.json = 0.8, 0.9
+            "min": 0.7,
+            "max": 0.75
+          },
+          "activeDurabilityPercentMinMax": { // Default in repair.json = 75, 90
+            "min": 5,
+            "max": 10
+          }
+        },
+        "MalfunctionProtections": { // Default in repair.json = 0.75, 0.9
+          "valuesMinMax": {
+            "min": 0.5,
+            "max": 0.6
+          },
+          "activeDurabilityPercentMinMax": { // Default in repair.json = 75, 90
+            "min": 5,
+            "max": 10
+          }
+        }
+      }
+    }
+  }
+}
