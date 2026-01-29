@@ -133,6 +133,7 @@ public class CialloRepairItemEventRouter(
 
         var isArmorLike =
             itemHelper.IsOfBaseclass(tpl, BaseClasses.ARMOR) ||
+            itemHelper.IsOfBaseclass(tpl, BaseClasses.ARMORED_EQUIPMENT) ||
             itemHelper.IsOfBaseclass(tpl, BaseClasses.VEST) ||
             itemHelper.IsOfBaseclass(tpl, BaseClasses.HEADWEAR) ||
             itemHelper.IsOfBaseclass(tpl, BaseClasses.FACE_COVER) ||
@@ -175,7 +176,8 @@ public class CialloRepairItemEventRouter(
         var tpl = repairDetails.RepairedItem.Template;
 
         if (!itemHelper.IsOfBaseclass(tpl, BaseClasses.FACE_COVER)
-            && !itemHelper.IsOfBaseclass(tpl, BaseClasses.VISORS))
+            && !itemHelper.IsOfBaseclass(tpl, BaseClasses.VISORS)
+            && !itemHelper.IsOfBaseclass(tpl, BaseClasses.ARMORED_EQUIPMENT))
         {
             return;
         }
