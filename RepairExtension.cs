@@ -165,7 +165,7 @@ public class CialloRepairItemEventRouter(
             logger.Debug($"[Ciallo] Added extra armor XP: {pointsToAdd} to {vestSkillToLevel} for {tpl}");
         }
 
-        profileHelper.AddSkillPointsToPlayer(pmcData, vestSkillToLevel, pointsToAdd);
+        profileHelper.AddSkillPointsToPlayer(pmcData, vestSkillToLevel, pointsToAdd, false, true);
     }
 
     private void TryAddBuffForFaceCoverAndVisor(RepairDetails repairDetails, PmcData pmcData)
