@@ -85,6 +85,13 @@ public class CialloRepairItemEventRouter(
             output
         );
 
+        // 顶满耐久：只在 RepairKit 修理时生效
+        if (repairDetails.RepairedItem?.Upd?.Repairable is not null)
+        {
+            repairDetails.RepairedItem.Upd.Repairable.Durability =
+                repairDetails.RepairedItem.Upd.Repairable.MaxDurability;
+        }
+
         repairService.AddBuffToItem(repairDetails, pmcData);
 
         output.ProfileChanges[sessionId].Items.ChangedItems.Add(repairDetails.RepairedItem);
@@ -165,7 +172,7 @@ public class CialloRepairItemEventRouter(
             logger.Debug($"[Ciallo] Added extra armor XP: {pointsToAdd} to {vestSkillToLevel} for {tpl}");
         }
 
-        profileHelper.AddSkillPointsToPlayer(pmcData, vestSkillToLevel, pointsToAdd, false, true);
+        profileHelper.AddSkillPointsToPlayer(pmcData, vestSkillToLevel, pointsToAdd, false);
     }
 
     private void TryAddBuffForFaceCoverAndVisor(RepairDetails repairDetails, PmcData pmcData)
@@ -229,7 +236,7 @@ public class CialloRepairItemEventRouter(
         }
 
         var durabilityToRestorePercent = repairDetails.RepairPoints / template.Properties.MaxDurability;
-        var durabilityMultiplier = GetDurabilityMultiplier(receivedDurabilityMaxPercent, durabilityToRestorePercent.Value);
+        var durabilityMultiplier = GetDurabilityMultiplier(receivedDurabilityMaxPercent / 100.0, durabilityToRestorePercent.Value);
 
         var doBuff = commonBuffMinChanceValue + commonBuffChanceLevelBonus * skillLevel * durabilityMultiplier;
         var random = new Random();
