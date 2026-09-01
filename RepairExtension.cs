@@ -1,75 +1,45 @@
 ﻿using SPTarkov.Common.Extensions;
+using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
+using SPTarkov.Server.Core.DI.Routing;
 using SPTarkov.Server.Core.Extensions;
 using SPTarkov.Server.Core.Helpers;
+using SPTarkov.Server.Core.Helpers.Items;
+using SPTarkov.Server.Core.Helpers.Profile;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common;
-using SPTarkov.Server.Core.Models.Eft.Common.Request;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Eft.ItemEvent;
 using SPTarkov.Server.Core.Models.Eft.Repair;
 using SPTarkov.Server.Core.Models.Enums;
 using SPTarkov.Server.Core.Models.Spt.Config;
-using SPTarkov.Server.Core.Models.Utils;
+using SPTarkov.Server.Core.Models.Spt.Tables;
 using SPTarkov.Server.Core.Routers;
-using SPTarkov.Server.Core.Servers;
-using SPTarkov.Server.Core.Services;
+using SPTarkov.Server.Core.Services.Commerce;
+using SPTarkov.Server.Core.Services.Locales;
 using SPTarkov.Server.Core.Utils;
 using ConfigBonusSettings = SPTarkov.Server.Core.Models.Spt.Config.BonusSettings;
-using LogLevel = SPTarkov.Server.Core.Models.Spt.Logging.LogLevel;
+using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace ciallo.repairextension;
 
-[Injectable(TypePriority = -100)]
-public class CialloRepairItemEventRouter(
+[Injectable]
+public class RepairCallbacks(
     ISptLogger<CialloRepairItemEventRouter> logger,
     EventOutputHolder eventOutputHolder,
     RepairService repairService,
+    RepairConfig repairConfig,
+    TemplateTable templateTable,
+    GlobalTable globals,
     ItemHelper itemHelper,
-    DatabaseService databaseService,
     ProfileHelper profileHelper,
-    ConfigServer configServer,
     RandomUtil randomUtil,
     WeightedRandomHelper weightedRandomHelper,
     ServerLocalisationService localisationService
-) : ItemEventRouterDefinition
+)
 {
-    private readonly RepairConfig _repairConfig = configServer.GetConfig<RepairConfig>();
-
-    protected override List<HandledRoute> GetHandledRoutes()
-    {
-        return new()
-        {
-            new(ItemEventActions.REPAIR, false),
-            new(ItemEventActions.TRADER_REPAIR, false)
-        };
-    }
-
-    protected override ValueTask<ItemEventRouterResponse> HandleItemEventInternal(
-        string url,
-        PmcData pmcData,
-        BaseInteractionRequestData body,
-        MongoId sessionID,
-        ItemEventRouterResponse output
-    )
-    {
-        switch (url)
-        {
-            case ItemEventActions.REPAIR:
-                return new ValueTask<ItemEventRouterResponse>(
-                    HandleRepairWithKit(sessionID, pmcData, (RepairActionDataRequest)body)
-                );
-            case ItemEventActions.TRADER_REPAIR:
-                return new ValueTask<ItemEventRouterResponse>(
-                    HandleTraderRepair(sessionID, pmcData, (TraderRepairActionDataRequest)body)
-                );
-            default:
-                throw new Exception($"CialloRepairItemEventRouter cannot handle route {url}");
-        }
-    }
-
-    private ItemEventRouterResponse HandleRepairWithKit(
+    public ValueTask<ItemEventRouterResponse> HandleRepairWithKit(
         MongoId sessionId,
         PmcData pmcData,
         RepairActionDataRequest body
@@ -101,10 +71,10 @@ public class CialloRepairItemEventRouter(
         TryAddArmorXpForFaceCoverAndFriends(repairDetails, pmcData);
         TryAddBuffForFaceCoverAndVisor(repairDetails, pmcData);
 
-        return output;
+        return new ValueTask<ItemEventRouterResponse>(output);
     }
 
-    private ItemEventRouterResponse HandleTraderRepair(
+    public ValueTask<ItemEventRouterResponse> HandleTraderRepair(
         MongoId sessionId,
         PmcData pmcData,
         TraderRepairActionDataRequest request
@@ -120,7 +90,7 @@ public class CialloRepairItemEventRouter(
 
             if (output.Warnings?.Count > 0)
             {
-                return output;
+                return new ValueTask<ItemEventRouterResponse>(output);
             }
 
             output.ProfileChanges[sessionId].Items.ChangedItems.Add(repairDetails.RepairedItem);
@@ -128,7 +98,7 @@ public class CialloRepairItemEventRouter(
             repairService.AddRepairSkillPoints(sessionId, repairDetails, pmcData);
         }
 
-        return output;
+        return new ValueTask<ItemEventRouterResponse>(output);
     }
 
     private void TryAddArmorXpForFaceCoverAndFriends(RepairDetails repairDetails, PmcData pmcData)
@@ -149,7 +119,7 @@ public class CialloRepairItemEventRouter(
         if (!isArmorLike)
             return;
 
-        var itemsDb = databaseService.GetItems();
+        var itemsDb = templateTable.Items;
         if (!itemsDb.TryGetValue(tpl, out var itemTemplate))
         {
             logger.Error(localisationService.GetText("repair-unable_to_find_item_in_db", tpl.ToString()));
@@ -165,7 +135,7 @@ public class CialloRepairItemEventRouter(
             return;
         }
 
-        var pointsToAdd = repairDetails.RepairPoints.Value * _repairConfig.ArmorKitSkillPointGainPerRepairPointMultiplier;
+        var pointsToAdd = repairDetails.RepairPoints.Value * repairConfig.ArmorKitSkillPointGainPerRepairPointMultiplier;
 
         if (logger.IsLogEnabled(LogLevel.Debug))
         {
@@ -192,7 +162,7 @@ public class CialloRepairItemEventRouter(
         if (!ShouldBuffFaceCoverLikeItem(repairDetails, pmcData))
             return;
 
-        var headwearCfg = _repairConfig.RepairKit.Headwear;
+        var headwearCfg = repairConfig.RepairKit.Headwear;
         AddBuff(headwearCfg, repairDetails.RepairedItem);
 
         if (logger.IsLogEnabled(LogLevel.Debug))
@@ -203,7 +173,6 @@ public class CialloRepairItemEventRouter(
 
     private bool ShouldBuffFaceCoverLikeItem(RepairDetails repairDetails, PmcData pmcData)
     {
-        var globals = databaseService.GetGlobals();
         var hasTemplate = itemHelper.GetItem(repairDetails.RepairedItem.Template);
         if (!hasTemplate.Key)
         {
@@ -275,3 +244,18 @@ public class CialloRepairItemEventRouter(
         };
     }
 }
+
+[Injectable(TypePriority = OnLoadOrder.Routers)]
+public class CialloRepairItemEventRouter(RepairCallbacks callbacks)
+    : ItemEventRouter([
+        new ItemRouteAction<RepairActionDataRequest>(
+            ItemEventActions.REPAIR,
+            async (url, pmcData, body, sessionID, output, cancellationToken) =>
+                await callbacks.HandleRepairWithKit(sessionID, pmcData, body)
+        ),
+        new ItemRouteAction<TraderRepairActionDataRequest>(
+            ItemEventActions.TRADER_REPAIR,
+            async (url, pmcData, body, sessionID, output, cancellationToken) =>
+                await callbacks.HandleTraderRepair(sessionID, pmcData, body)
+        ),
+    ]) { }

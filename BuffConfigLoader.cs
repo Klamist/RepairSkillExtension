@@ -1,28 +1,24 @@
-﻿using SPTarkov.Common.Extensions;
+﻿using System.Text.Json;
+using SPTarkov.Common.Extensions;
+using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
-using SPTarkov.Server.Core.Models.Eft.Common;
 using SPTarkov.Server.Core.Models.Spt.Config;
-using SPTarkov.Server.Core.Models.Utils;
-using SPTarkov.Server.Core.Servers;
-using SPTarkov.Server.Core.Services;
+using SPTarkov.Server.Core.Models.Spt.Tables;
 using ConfigBonusSettings = SPTarkov.Server.Core.Models.Spt.Config.BonusSettings;
-using System.Text.Json;
 
 namespace Ciallo.RepairExpansion;
 
-[Injectable(TypePriority = OnLoadOrder.PostDBModLoader + 1)]
+[Injectable(TypePriority = OnLoadOrder.PostLoad + 1)]
 public class BuffConfigLoader(
-    ConfigServer configServer,
-    DatabaseService databaseService,
+    RepairConfig repairConfig,
+    GlobalTable globals,
     ISptLogger<BuffConfigLoader> logger
 ) : IOnLoad
 {
-    private readonly RepairConfig _repairConfig = configServer.GetConfig<RepairConfig>();
-
     private static readonly JsonSerializerOptions _jsonOptions = new() { ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
 
-    public Task OnLoad()
+    public Task OnLoadAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -61,7 +57,6 @@ public class BuffConfigLoader(
 
     private void ApplyBuffSettings(BuffConfigFile cfg)
     {
-        var globals = databaseService.GetGlobals();
         var skills = globals.Configuration.SkillsSettings;
         var dict = skills.GetAllPropertiesAsDictionary();
 
@@ -89,10 +84,10 @@ public class BuffConfigLoader(
 
     private void ApplyRepairKitSettings(BuffConfigFile cfg)
     {
-        _repairConfig.RepairKit.Armor = cfg.repairKit.armors;
-        _repairConfig.RepairKit.Vest = cfg.repairKit.armors;
-        _repairConfig.RepairKit.Headwear = cfg.repairKit.armors;
-        _repairConfig.RepairKit.Weapon = cfg.repairKit.weapon;
+        repairConfig.RepairKit.Armor = cfg.repairKit.armors;
+        repairConfig.RepairKit.Vest = cfg.repairKit.armors;
+        repairConfig.RepairKit.Headwear = cfg.repairKit.armors;
+        repairConfig.RepairKit.Weapon = cfg.repairKit.weapon;
     }
 }
 
