@@ -1,83 +1,91 @@
-﻿using SPTarkov.Common.Extensions;
+using SPTarkov.Common.Extensions;
+using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
-using SPTarkov.Server.Core.Extensions;
+using SPTarkov.Server.Core.DI.Routing;
 using SPTarkov.Server.Core.Helpers;
+using SPTarkov.Server.Core.Helpers.Items;
+using SPTarkov.Server.Core.Helpers.Profile;
 using SPTarkov.Server.Core.Models.Common;
 using SPTarkov.Server.Core.Models.Eft.Common;
-using SPTarkov.Server.Core.Models.Eft.Common.Request;
 using SPTarkov.Server.Core.Models.Eft.Common.Tables;
 using SPTarkov.Server.Core.Models.Eft.ItemEvent;
 using SPTarkov.Server.Core.Models.Eft.Repair;
 using SPTarkov.Server.Core.Models.Enums;
 using SPTarkov.Server.Core.Models.Spt.Config;
-using SPTarkov.Server.Core.Models.Utils;
-using SPTarkov.Server.Core.Routers;
-using SPTarkov.Server.Core.Servers;
-using SPTarkov.Server.Core.Services;
+using SPTarkov.Server.Core.Models.Spt.Tables;
+using SPTarkov.Server.Core.Services.Commerce;
+using SPTarkov.Server.Core.Services.Locales;
 using SPTarkov.Server.Core.Utils;
 using ConfigBonusSettings = SPTarkov.Server.Core.Models.Spt.Config.BonusSettings;
-using LogLevel = SPTarkov.Server.Core.Models.Spt.Logging.LogLevel;
 
 namespace ciallo.repairextension;
 
-[Injectable(TypePriority = -100)]
-public class CialloRepairItemEventRouter(
-    ISptLogger<CialloRepairItemEventRouter> logger,
-    EventOutputHolder eventOutputHolder,
-    RepairService repairService,
-    ItemHelper itemHelper,
-    DatabaseService databaseService,
-    ProfileHelper profileHelper,
-    ConfigServer configServer,
-    RandomUtil randomUtil,
-    WeightedRandomHelper weightedRandomHelper,
-    ServerLocalisationService localisationService
-) : ItemEventRouterDefinition
+[Injectable(TypePriority = OnLoadOrder.PostLoad + 1)]
+public class CialloRepairItemEventRouter : ItemEventRouter
 {
-    private readonly RepairConfig _repairConfig = configServer.GetConfig<RepairConfig>();
+    private static CialloRepairItemEventRouter? _current;
+    private readonly ISptLogger<CialloRepairItemEventRouter> logger;
+    private readonly RepairService repairService;
+    private readonly ItemHelper itemHelper;
+    private readonly GlobalTable globalTable;
+    private readonly TemplateTable templateTable;
+    private readonly ProfileHelper profileHelper;
+    private readonly RepairConfig repairConfig;
+    private readonly RandomUtil randomUtil;
+    private readonly WeightedRandomHelper weightedRandomHelper;
+    private readonly ServerLocalisationService localisationService;
 
-    protected override List<HandledRoute> GetHandledRoutes()
+    public CialloRepairItemEventRouter(
+        ISptLogger<CialloRepairItemEventRouter> logger,
+        RepairService repairService,
+        ItemHelper itemHelper,
+        GlobalTable globalTable,
+        TemplateTable templateTable,
+        ProfileHelper profileHelper,
+        RepairConfig repairConfig,
+        RandomUtil randomUtil,
+        WeightedRandomHelper weightedRandomHelper,
+        ServerLocalisationService localisationService
+    ) : base(CreateRoutes())
     {
-        return new()
-        {
-            new(ItemEventActions.REPAIR, false),
-            new(ItemEventActions.TRADER_REPAIR, false)
-        };
+        this.logger = logger;
+        this.repairService = repairService;
+        this.itemHelper = itemHelper;
+        this.globalTable = globalTable;
+        this.templateTable = templateTable;
+        this.profileHelper = profileHelper;
+        this.repairConfig = repairConfig;
+        this.randomUtil = randomUtil;
+        this.weightedRandomHelper = weightedRandomHelper;
+        this.localisationService = localisationService;
+        _current = this;
     }
 
-    protected override ValueTask<ItemEventRouterResponse> HandleItemEventInternal(
+    private static ItemRouteAction[] CreateRoutes() =>
+    [
+        new ItemRouteAction<RepairActionDataRequest>(
+            ItemEventActions.REPAIR,
+            static (url, pmc, body, session, output, ct) =>
+                _current!.HandleRepairWithKitRoute(url, pmc, body, session, output, ct)
+        ),
+        new ItemRouteAction<TraderRepairActionDataRequest>(
+            ItemEventActions.TRADER_REPAIR,
+            static (url, pmc, body, session, output, ct) =>
+                _current!.HandleTraderRepairRoute(url, pmc, body, session, output, ct)
+        )
+    ];
+
+    private ValueTask<ItemEventRouterResponse> HandleRepairWithKitRoute(
         string url,
         PmcData pmcData,
-        BaseInteractionRequestData body,
-        MongoId sessionID,
-        ItemEventRouterResponse output
-    )
-    {
-        switch (url)
-        {
-            case ItemEventActions.REPAIR:
-                return new ValueTask<ItemEventRouterResponse>(
-                    HandleRepairWithKit(sessionID, pmcData, (RepairActionDataRequest)body)
-                );
-            case ItemEventActions.TRADER_REPAIR:
-                return new ValueTask<ItemEventRouterResponse>(
-                    HandleTraderRepair(sessionID, pmcData, (TraderRepairActionDataRequest)body)
-                );
-            default:
-                throw new Exception($"CialloRepairItemEventRouter cannot handle route {url}");
-        }
-    }
-
-    private ItemEventRouterResponse HandleRepairWithKit(
+        RepairActionDataRequest body,
         MongoId sessionId,
-        PmcData pmcData,
-        RepairActionDataRequest body
+        ItemEventRouterResponse output,
+        CancellationToken cancellationToken
     )
     {
-        var output = eventOutputHolder.GetOutput(sessionId);
-
-        var repairDetails = repairService.RepairItemByKit(
+        var details = repairService.RepairItemByKit(
             sessionId,
             pmcData,
             body.RepairKitsInfo,
@@ -85,103 +93,103 @@ public class CialloRepairItemEventRouter(
             output
         );
 
-        // 顶满耐久：只在 RepairKit 修理时生效
-        if (repairDetails.RepairedItem?.Upd?.Repairable is not null)
+        if (details.RepairedItem?.Upd?.Repairable is not null)
         {
-            repairDetails.RepairedItem.Upd.Repairable.Durability =
-                repairDetails.RepairedItem.Upd.Repairable.MaxDurability;
+            details.RepairedItem.Upd.Repairable.Durability = details.RepairedItem.Upd.Repairable.MaxDurability;
         }
 
-        repairService.AddBuffToItem(repairDetails, pmcData);
+        repairService.AddBuffToItem(details, pmcData);
+        output.ProfileChanges[sessionId].Items.ChangedItems.Add(details.RepairedItem);
+        repairService.AddRepairSkillPoints(sessionId, details, pmcData);
+        TryAddArmorXp(details, pmcData);
+        TryAddFaceCoverBuff(details, pmcData);
 
-        output.ProfileChanges[sessionId].Items.ChangedItems.Add(repairDetails.RepairedItem);
-
-        repairService.AddRepairSkillPoints(sessionId, repairDetails, pmcData);
-
-        TryAddArmorXpForFaceCoverAndFriends(repairDetails, pmcData);
-        TryAddBuffForFaceCoverAndVisor(repairDetails, pmcData);
-
-        return output;
+        return ValueTask.FromResult(output);
     }
 
-    private ItemEventRouterResponse HandleTraderRepair(
-        MongoId sessionId,
+    private ValueTask<ItemEventRouterResponse> HandleTraderRepairRoute(
+        string url,
         PmcData pmcData,
-        TraderRepairActionDataRequest request
+        TraderRepairActionDataRequest body,
+        MongoId sessionId,
+        ItemEventRouterResponse output,
+        CancellationToken cancellationToken
     )
     {
-        var output = eventOutputHolder.GetOutput(sessionId);
-
-        foreach (var repairItem in request.RepairItems)
+        foreach (var repairItem in body.RepairItems)
         {
-            var repairDetails = repairService.RepairItemByTrader(sessionId, pmcData, repairItem, request.TraderId);
-
-            repairService.PayForRepair(sessionId, pmcData, repairItem.Id, repairDetails.RepairCost.Value, request.TraderId, output);
+            var details = repairService.RepairItemByTrader(sessionId, pmcData, repairItem, body.TraderId);
+            repairService.PayForRepair(
+                sessionId,
+                pmcData,
+                repairItem.Id,
+                details.RepairCost!.Value,
+                body.TraderId,
+                output
+            );
 
             if (output.Warnings?.Count > 0)
             {
-                return output;
+                return ValueTask.FromResult(output);
             }
 
-            output.ProfileChanges[sessionId].Items.ChangedItems.Add(repairDetails.RepairedItem);
-
-            repairService.AddRepairSkillPoints(sessionId, repairDetails, pmcData);
+            output.ProfileChanges[sessionId].Items.ChangedItems.Add(details.RepairedItem);
+            repairService.AddRepairSkillPoints(sessionId, details, pmcData);
         }
 
-        return output;
+        return ValueTask.FromResult(output);
     }
 
-    private void TryAddArmorXpForFaceCoverAndFriends(RepairDetails repairDetails, PmcData pmcData)
+    private void TryAddArmorXp(RepairDetails details, PmcData pmcData)
     {
-        if (!repairDetails.RepairedByKit.GetValueOrDefault(false))
+        if (!details.RepairedByKit.GetValueOrDefault())
+        {
             return;
+        }
 
-        var tpl = repairDetails.RepairedItem.Template;
-
-        var isArmorLike =
-            itemHelper.IsOfBaseclass(tpl, BaseClasses.ARMOR) ||
-            itemHelper.IsOfBaseclass(tpl, BaseClasses.ARMORED_EQUIPMENT) ||
-            itemHelper.IsOfBaseclass(tpl, BaseClasses.VEST) ||
-            itemHelper.IsOfBaseclass(tpl, BaseClasses.HEADWEAR) ||
-            itemHelper.IsOfBaseclass(tpl, BaseClasses.FACE_COVER) ||
-            itemHelper.IsOfBaseclass(tpl, BaseClasses.VISORS);
-
-        if (!isArmorLike)
+        var tpl = details.RepairedItem.Template;
+        if (!itemHelper.IsOfBaseclass(tpl, BaseClasses.ARMOR)
+            && !itemHelper.IsOfBaseclass(tpl, BaseClasses.ARMORED_EQUIPMENT)
+            && !itemHelper.IsOfBaseclass(tpl, BaseClasses.VEST)
+            && !itemHelper.IsOfBaseclass(tpl, BaseClasses.HEADWEAR)
+            && !itemHelper.IsOfBaseclass(tpl, BaseClasses.FACE_COVER)
+            && !itemHelper.IsOfBaseclass(tpl, BaseClasses.VISORS))
+        {
             return;
+        }
 
-        var itemsDb = databaseService.GetItems();
-        if (!itemsDb.TryGetValue(tpl, out var itemTemplate))
+        if (!templateTable.Items.TryGetValue(tpl, out var itemTemplate))
         {
             logger.Error(localisationService.GetText("repair-unable_to_find_item_in_db", tpl.ToString()));
             return;
         }
 
-        var armorType = itemTemplate.Properties.ArmorType;
-        var vestSkillToLevel = armorType == "Heavy" ? SkillTypes.HeavyVests : SkillTypes.LightVests;
-
-        if (repairDetails.RepairPoints is null)
+        if (details.RepairPoints is null)
         {
             logger.Error(localisationService.GetText("repair-item_has_no_repair_points", tpl.ToString()));
             return;
         }
 
-        var pointsToAdd = repairDetails.RepairPoints.Value * _repairConfig.ArmorKitSkillPointGainPerRepairPointMultiplier;
+        var skill = itemTemplate.Properties.ArmorType == "Heavy"
+            ? SkillTypes.HeavyVests
+            : SkillTypes.LightVests;
 
-        if (logger.IsLogEnabled(LogLevel.Debug))
-        {
-            logger.Debug($"[Ciallo] Added extra armor XP: {pointsToAdd} to {vestSkillToLevel} for {tpl}");
-        }
-
-        profileHelper.AddSkillPointsToPlayer(pmcData, vestSkillToLevel, pointsToAdd, false);
+        profileHelper.AddSkillPointsToPlayer(
+            pmcData,
+            skill,
+            details.RepairPoints.Value * repairConfig.ArmorKitSkillPointGainPerRepairPointMultiplier,
+            false
+        );
     }
 
-    private void TryAddBuffForFaceCoverAndVisor(RepairDetails repairDetails, PmcData pmcData)
+    private void TryAddFaceCoverBuff(RepairDetails details, PmcData pmcData)
     {
-        if (!repairDetails.RepairedByKit.GetValueOrDefault(false))
+        if (!details.RepairedByKit.GetValueOrDefault())
+        {
             return;
+        }
 
-        var tpl = repairDetails.RepairedItem.Template;
-
+        var tpl = details.RepairedItem.Template;
         if (!itemHelper.IsOfBaseclass(tpl, BaseClasses.FACE_COVER)
             && !itemHelper.IsOfBaseclass(tpl, BaseClasses.VISORS)
             && !itemHelper.IsOfBaseclass(tpl, BaseClasses.ARMORED_EQUIPMENT))
@@ -189,89 +197,66 @@ public class CialloRepairItemEventRouter(
             return;
         }
 
-        if (!ShouldBuffFaceCoverLikeItem(repairDetails, pmcData))
+        var found = itemHelper.GetItem(tpl);
+        if (!found.Key || details.RepairPoints is null)
+        {
             return;
-
-        var headwearCfg = _repairConfig.RepairKit.Headwear;
-        AddBuff(headwearCfg, repairDetails.RepairedItem);
-
-        if (logger.IsLogEnabled(LogLevel.Debug))
-        {
-            logger.Debug($"[Ciallo] Applied headwear buff config to FaceCover/Visor {tpl}");
         }
+
+        var template = found.Value;
+        var skill = template.Properties.ArmorType == "Heavy"
+            ? SkillTypes.HeavyVests
+            : SkillTypes.LightVests;
+
+        var skillProgress = pmcData.Skills?.Common?.FirstOrDefault(x => x.Id == skill)?.Progress ?? 0;
+        if (skillProgress < 1000)
+        {
+            return;
+        }
+
+        var dict = globalTable.Configuration.SkillsSettings.GetAllPropertiesAsDictionary();
+        if (dict[skill.ToString()] is not ArmorSkills armor)
+        {
+            return;
+        }
+
+        var multiplier = Math.Min(
+            details.RepairPoints.Value / (double)template.Properties.MaxDurability,
+            armor.BuffSettings.ReceivedDurabilityMaxPercent / 100.0
+        ) / (armor.BuffSettings.ReceivedDurabilityMaxPercent / 100.0);
+
+        var level = Math.Truncate(skillProgress / 100);
+        if (new Random().NextDouble()
+            > armor.BuffSettings.CommonBuffMinChanceValue
+            + armor.BuffSettings.CommonBuffChanceLevelBonus * level * multiplier)
+        {
+            return;
+        }
+
+        AddBuff(repairConfig.RepairKit.Headwear, details.RepairedItem);
     }
 
-    private bool ShouldBuffFaceCoverLikeItem(RepairDetails repairDetails, PmcData pmcData)
+    private void AddBuff(ConfigBonusSettings config, Item item)
     {
-        var globals = databaseService.GetGlobals();
-        var hasTemplate = itemHelper.GetItem(repairDetails.RepairedItem.Template);
-        if (!hasTemplate.Key)
-        {
-            return false;
-        }
-
-        var template = hasTemplate.Value;
-
-        var armorType = template.Properties.ArmorType;
-        var itemSkillType = armorType == "Heavy" ? SkillTypes.HeavyVests : SkillTypes.LightVests;
-
-        if (pmcData.GetSkillFromProfile(itemSkillType)?.Progress < 1000)
-        {
-            return false;
-        }
-
-        var skillSettings = globals.Configuration.SkillsSettings.GetAllPropertiesAsDictionary();
-        BuffSettings? buffSettings = ((ArmorSkills)skillSettings[itemSkillType.ToString()]).BuffSettings;
-
-        var commonBuffMinChanceValue = buffSettings.CommonBuffMinChanceValue;
-        var commonBuffChanceLevelBonus = buffSettings.CommonBuffChanceLevelBonus;
-        var receivedDurabilityMaxPercent = buffSettings.ReceivedDurabilityMaxPercent;
-
-        var skillLevel = Math.Truncate((pmcData.GetSkillFromProfile(itemSkillType)?.Progress ?? 0) / 100);
-
-        if (repairDetails.RepairPoints is null)
-        {
-            logger.Error(localisationService.GetText("repair-item_has_no_repair_points", repairDetails.RepairedItem.Template.ToString()));
-            return false;
-        }
-
-        var durabilityToRestorePercent = repairDetails.RepairPoints / template.Properties.MaxDurability;
-        var durabilityMultiplier = GetDurabilityMultiplier(receivedDurabilityMaxPercent / 100.0, durabilityToRestorePercent.Value);
-
-        var doBuff = commonBuffMinChanceValue + commonBuffChanceLevelBonus * skillLevel * durabilityMultiplier;
-        var random = new Random();
-        return random.NextDouble() <= doBuff;
-    }
-
-    private double GetDurabilityMultiplier(double receivedDurabilityMaxPercent, double durabilityToRestorePercent)
-    {
-        var clamped = Math.Min(durabilityToRestorePercent, receivedDurabilityMaxPercent);
-        return clamped / receivedDurabilityMaxPercent;
-    }
-
-    private void AddBuff(ConfigBonusSettings itemConfig, Item item)
-    {
-        var bonusRarityName = weightedRandomHelper.GetWeightedValue(itemConfig.RarityWeight);
-        var bonusTypeName = weightedRandomHelper.GetWeightedValue(itemConfig.BonusTypeWeight);
-
-        var bonusRarity = bonusRarityName == "Rare" ? itemConfig.Rare : itemConfig.Common;
-        var bonusValues = bonusRarity[bonusTypeName].ValuesMinMax;
-        var bonusValue = randomUtil.GetDouble(bonusValues.Min, bonusValues.Max);
-
-        var bonusThresholdPercents = bonusRarity[bonusTypeName].ActiveDurabilityPercentMinMax;
-        var bonusThresholdPercent = randomUtil.GetDouble(bonusThresholdPercents.Min, bonusThresholdPercents.Max);
+        var rarityName = weightedRandomHelper.GetWeightedValue(config.RarityWeight);
+        var typeName = weightedRandomHelper.GetWeightedValue(config.BonusTypeWeight);
+        var rarity = rarityName == "Rare" ? config.Rare : config.Common;
+        var range = rarity[typeName].ValuesMinMax;
 
         item.Upd ??= new Upd();
         item.Upd.Buff = new UpdBuff
         {
-            Rarity = bonusRarityName,
-            BuffType = Enum.Parse<RepairBuffType>(bonusTypeName),
-            Value = bonusValue,
+            Rarity = rarityName,
+            BuffType = Enum.Parse<RepairBuffType>(typeName),
+            Value = randomUtil.GetDouble(range.Min, range.Max),
             ThresholdDurability = randomUtil.GetPercentOfValue(
-                bonusThresholdPercent,
-                item.Upd.Repairable.Durability.Value,
+                randomUtil.GetDouble(
+                    rarity[typeName].ActiveDurabilityPercentMinMax.Min,
+                    rarity[typeName].ActiveDurabilityPercentMinMax.Max
+                ),
+                item.Upd.Repairable!.Durability!.Value,
                 0
-            ),
+            )
         };
     }
 }

@@ -1,67 +1,44 @@
 ﻿using SPTarkov.Common.Extensions;
+using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
+using SPTarkov.Server.Core.Helpers.Server;
 using SPTarkov.Server.Core.Models.Eft.Common;
 using SPTarkov.Server.Core.Models.Spt.Config;
+using SPTarkov.Server.Core.Models.Spt.Tables;
 using SPTarkov.Server.Core.Models.Utils;
-using SPTarkov.Server.Core.Servers;
-using SPTarkov.Server.Core.Services;
 using ConfigBonusSettings = SPTarkov.Server.Core.Models.Spt.Config.BonusSettings;
-using System.Text.Json;
+using System.Reflection;
 
 namespace Ciallo.RepairExpansion;
 
-[Injectable(TypePriority = OnLoadOrder.PostDBModLoader + 1)]
+[Injectable(TypePriority = OnLoadOrder.PostLoad + 1)]
 public class BuffConfigLoader(
-    ConfigServer configServer,
-    DatabaseService databaseService,
-    ISptLogger<BuffConfigLoader> logger
+    RepairConfig repairConfig,
+    GlobalTable globalTable,
+    ISptLogger<BuffConfigLoader> logger,
+    ModHelper modHelper
 ) : IOnLoad
 {
-    private readonly RepairConfig _repairConfig = configServer.GetConfig<RepairConfig>();
-
-    private static readonly JsonSerializerOptions _jsonOptions = new() { ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
-
-    public Task OnLoad()
+    public Task OnLoadAsync(CancellationToken cancellationToken)
     {
         try
         {
-            var path = Path.Combine(
-                AppContext.BaseDirectory,
-                "user", "mods", "RepairSkillExtension", "buffs.jsonc"
-            );
-
-            if (!File.Exists(path))
-            {
-                logger.Error($"[Ciallo] buffs.jsonc not found: {path}");
-                return Task.CompletedTask;
-            }
-
-            var json = File.ReadAllText(path);
-            var cfg = JsonSerializer.Deserialize<BuffConfigFile>(json, _jsonOptions);
-
-            if (cfg == null)
-            {
-                logger.Error("[Ciallo] Failed to parse buffs.jsonc");
-                return Task.CompletedTask;
-            }
-
-            ApplyBuffSettings(cfg);
-            ApplyRepairKitSettings(cfg);
-
+            var pathToMod = modHelper.GetAbsolutePathToModFolder(Assembly.GetExecutingAssembly());
+            var cfg = modHelper.GetJsonDataFromFile<BuffConfigFile>(pathToMod, "buffs.jsonc");
+            ApplyBuffSettings(cfg, globalTable);
+            ApplyRepairKitSettings(cfg, repairConfig);
             logger.Success("[Ciallo] Repair buffs.jsonc applied successfully.");
         }
         catch (Exception ex)
         {
             logger.Error($"[Ciallo] Error loading buffs.jsonc: {ex}");
         }
-
         return Task.CompletedTask;
     }
 
-    private void ApplyBuffSettings(BuffConfigFile cfg)
+    private void ApplyBuffSettings(BuffConfigFile cfg, GlobalTable globals)
     {
-        var globals = databaseService.GetGlobals();
         var skills = globals.Configuration.SkillsSettings;
         var dict = skills.GetAllPropertiesAsDictionary();
 
@@ -87,12 +64,12 @@ public class BuffConfigLoader(
             logger.Warning("[Ciallo] WeaponTreatment is not WeaponTreatment type");
     }
 
-    private void ApplyRepairKitSettings(BuffConfigFile cfg)
+    private static void ApplyRepairKitSettings(BuffConfigFile cfg, RepairConfig repairConfig)
     {
-        _repairConfig.RepairKit.Armor = cfg.repairKit.armors;
-        _repairConfig.RepairKit.Vest = cfg.repairKit.armors;
-        _repairConfig.RepairKit.Headwear = cfg.repairKit.armors;
-        _repairConfig.RepairKit.Weapon = cfg.repairKit.weapon;
+        repairConfig.RepairKit.Armor = cfg.repairKit.armors;
+        repairConfig.RepairKit.Vest = cfg.repairKit.armors;
+        repairConfig.RepairKit.Headwear = cfg.repairKit.armors;
+        repairConfig.RepairKit.Weapon = cfg.repairKit.weapon;
     }
 }
 

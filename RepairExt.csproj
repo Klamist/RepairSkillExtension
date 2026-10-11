@@ -1,0 +1,43 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>RepairSkillExtension</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="server-mod-examples-main\**" />
+    <EmbeddedResource Remove="server-mod-examples-main\**" />
+    <None Remove="server-mod-examples-main\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="SemanticVersioning">
+      <HintPath>D:\EFT416\SPT_Runtime\SemanticVersioning.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="SPT.Server">
+      <HintPath>D:\EFT416\SPT_Runtime\SPT.Server.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="SPTarkov.Common">
+      <HintPath>D:\EFT416\SPT_Runtime\SPTarkov.Common.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="SPTarkov.DI">
+      <HintPath>D:\EFT416\SPT_Runtime\SPTarkov.DI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="SPTarkov.Server.Core">
+      <HintPath>D:\EFT416\SPT_Runtime\SPTarkov.Server.Core.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
