@@ -3,6 +3,7 @@ using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
 using SPTarkov.Server.Core.DI.Routing;
+using SPTarkov.Server.Core.Extensions;
 using SPTarkov.Server.Core.Helpers;
 using SPTarkov.Server.Core.Helpers.Items;
 using SPTarkov.Server.Core.Helpers.Profile;
@@ -129,9 +130,7 @@ public class CialloRepairItemEventRouter : ItemEventRouter
             );
 
             if (output.Warnings?.Count > 0)
-            {
                 return ValueTask.FromResult(output);
-            }
 
             output.ProfileChanges[sessionId].Items.ChangedItems.Add(details.RepairedItem);
             repairService.AddRepairSkillPoints(sessionId, details, pmcData);
@@ -142,10 +141,7 @@ public class CialloRepairItemEventRouter : ItemEventRouter
 
     private void TryAddArmorXp(RepairDetails details, PmcData pmcData)
     {
-        if (!details.RepairedByKit.GetValueOrDefault())
-        {
-            return;
-        }
+        if (!details.RepairedByKit.GetValueOrDefault()) return;
 
         var tpl = details.RepairedItem.Template;
         if (!itemHelper.IsOfBaseclass(tpl, BaseClasses.ARMOR)
@@ -198,27 +194,18 @@ public class CialloRepairItemEventRouter : ItemEventRouter
         }
 
         var found = itemHelper.GetItem(tpl);
-        if (!found.Key || details.RepairPoints is null)
-        {
-            return;
-        }
+        if (!found.Key || details.RepairPoints is null) return;
 
         var template = found.Value;
         var skill = template.Properties.ArmorType == "Heavy"
             ? SkillTypes.HeavyVests
             : SkillTypes.LightVests;
 
-        var skillProgress = pmcData.Skills?.Common?.FirstOrDefault(x => x.Id == skill)?.Progress ?? 0;
-        if (skillProgress < 1000)
-        {
-            return;
-        }
+        var skillProgress = pmcData.GetSkillFromProfile(skill)?.Progress ?? 0;
+        if (skillProgress < 1000) return;
 
         var dict = globalTable.Configuration.SkillsSettings.GetAllPropertiesAsDictionary();
-        if (dict[skill.ToString()] is not ArmorSkills armor)
-        {
-            return;
-        }
+        if (dict[skill.ToString()] is not ArmorSkills armor) return;
 
         var multiplier = Math.Min(
             details.RepairPoints.Value / (double)template.Properties.MaxDurability,
@@ -226,9 +213,8 @@ public class CialloRepairItemEventRouter : ItemEventRouter
         ) / (armor.BuffSettings.ReceivedDurabilityMaxPercent / 100.0);
 
         var level = Math.Truncate(skillProgress / 100);
-        if (new Random().NextDouble()
-            > armor.BuffSettings.CommonBuffMinChanceValue
-            + armor.BuffSettings.CommonBuffChanceLevelBonus * level * multiplier)
+        if (Random.Shared.NextDouble() 
+            > armor.BuffSettings.CommonBuffMinChanceValue + armor.BuffSettings.CommonBuffChanceLevelBonus * level * multiplier)
         {
             return;
         }
